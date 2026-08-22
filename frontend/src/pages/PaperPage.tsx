@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useGenLayer } from '../hooks/useGenLayer';
-import { LoadingSpinner, NondetPendingNote, TransactionError } from '../components/shared';
+import { LoadingSpinner, TransactionError } from '../components/shared';
 import { PaperRecordView, AssertedStatus, ASSERTED_STATUS_LABELS } from '../config/contract';
 
 type LoadState = 'loading' | 'found' | 'not_found' | 'error';

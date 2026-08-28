@@ -1,23 +1,27 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 """
 RetractionWatch — on-chain attestation of a paper's current retraction
-status, cross-checked against two independent, fixed, non-optional
-evidence sources derived structurally from a single locked identifier.
+status, cross-checked against a fixed, non-optional evidence source
+derived structurally from a single locked identifier.
 
 CONCEPT
 -------
 A paper is registered once, by DOI or arXiv ID (never a URL, never free
 text) — this is the locked identifier every later evidence fetch derives
-from. Anyone can then file a status check against that paper, asserting
-what they believe its current status is (active, or retracted/withdrawn).
-Resolution fetches the paper's record from Crossref (the DOI registry's
-own canonical metadata, which carries an `update-to` relation whenever a
-publisher has filed a retraction) and, if the paper also has an arXiv ID,
-from arXiv's own Atom API (which carries a `<arxiv:comment>` field arXiv
-itself populates when a preprint is withdrawn). The verdict — confirmed
-active, confirmed retracted, no record found, or sources conflict — is
-compared against the filer's asserted status to determine whether the
-assertion was accurate.
+from, and it also fixes which single evidence source resolution will
+ever fetch for that paper (see IMPLEMENTED SCOPE below for why this is
+single-source, not dual-source, in this version). Anyone can then file a
+status check against that paper, asserting what they believe its current
+status is (active, or retracted/withdrawn). Resolution fetches the
+paper's record from Crossref (the DOI registry's own canonical metadata,
+which carries an `update-to` relation whenever a publisher has filed a
+retraction) if the paper was registered by DOI, or from arXiv's own Atom
+API (which carries a `<arxiv:comment>` field arXiv itself populates when
+a preprint is withdrawn) if the paper was registered by arXiv ID — never
+both for the same paper. The verdict — confirmed active, confirmed
+retracted, no record found, or sources conflict (structurally
+unreachable in this version; see below) — is compared against the
+filer's asserted status to determine whether the assertion was accurate.
 
 WHO BENEFITS FROM A FALSE VERDICT (Test 1's actual answer, stated
 plainly): someone who wants to keep citing a paper benefits if a genuinely
@@ -67,10 +71,13 @@ more than three requires one (skeleton's own instruction):
                                  withdrawal
     no_record_found          — neither source returned a usable record
                                  for this identifier
-    sources_conflict         — Crossref and arXiv evidence disagree with
-                                 each other (e.g. arXiv shows a withdrawal
-                                 comment but the DOI's Crossref record has
-                                 no update-to relation yet, or vice versa)
+    sources_conflict         — reserved for a future version implementing
+                                 counterpart-identifier resolution (see
+                                 IMPLEMENTED SCOPE below); structurally
+                                 unreachable under this version's
+                                 single-source-per-paper fetch behavior,
+                                 since only one of Crossref/arXiv is ever
+                                 fetched for a given paper
 Three-way (active/retracted/unverifiable) was considered and rejected as
 insufficiently granular for this specific evidence structure: "no record
 found" and "sources actively disagree" are different evidentiary
@@ -82,7 +89,9 @@ bucket meant for simple absence. This mirrors Recourse's own confirmed
 lesson that forcing a binary or an insufficiently granular verdict onto
 a concept whose evidence source doesn't always support a clean answer
 produces dishonest results — the same discipline applied one level
-further here.
+further here. (This justification is forward-looking to a version with
+counterpart resolution built; see IMPLEMENTED SCOPE below for why
+`sources_conflict` cannot actually occur in the version shipped now.)
 
 EVIDENCE SOURCES (Test 2 — both fixed, neither submitter-selected):
   1. Crossref REST API: api.crossref.org/works/{doi} — canonical DOI
@@ -101,21 +110,59 @@ EVIDENCE SOURCES (Test 2 — both fixed, neither submitter-selected):
            any retraction indicator present, and live testing confirms
            this correctly catches signal (b) without being told to look
            for it by name.
-     Applies only when the identifier is a DOI (or a paper's
-     Crossref-registered DOI, if arXiv metadata resolves one).
+     Applies only when the paper was registered by a DOI identifier
+     (`identifier_kind == "doi"`) — see IMPLEMENTED SCOPE below for why
+     this is exactly one condition, not an "or."
   2. arXiv Atom API: export.arxiv.org/api/query?id_list={arxiv_id} —
      arXiv's own listing. arXiv prepends a `<arxiv:comment>` element
      (and, distinctly, sets `<arxiv:journal_ref>` or a title-prefixed
      "[WITHDRAWN]" marker in some cases) when a preprint is withdrawn.
-     Applies only when the identifier is an arXiv ID, or when Crossref's
-     own metadata resolves an arXiv ID for a DOI-registered work.
-A paper registered by DOI with no known arXiv counterpart only has leg 1
-available; a paper registered by arXiv ID with no Crossref DOI only has
-leg 2. Both legs are attempted every time regardless — the contract
-itself decides which legs actually returned usable data, rather than
-assuming based on which identifier type was used at registration, since
-Crossref and arXiv cross-reference each other's identifiers in their own
-metadata and a single fetch attempt is cheap.
+     Applies only when the paper was registered by an arXiv identifier
+     (`identifier_kind == "arxiv"`) — see IMPLEMENTED SCOPE below.
+IMPLEMENTED SCOPE, STATED EXPLICITLY (this is the single-source behavior
+this version actually ships, replacing an earlier draft of this
+docstring that described counterpart-identifier resolution which was
+never implemented — caught at steward review, corrected here rather than
+building the unimplemented behavior, since a genuinely rare, hard-to-
+live-test cross-source-disagreement case is a worse next step than
+making the claim match the code): `identifier_kind` is fixed once, at
+registration, from the shape of the identifier the registrant supplied.
+`resolve_check` fetches exactly one evidence leg per paper for the
+lifetime of that PaperRecord — Crossref if `identifier_kind == "doi"`,
+arXiv if `identifier_kind == "arxiv"` — and never attempts the other
+leg, regardless of whether the fetched record cross-references a
+counterpart identifier (a Crossref record's own metadata resolving an
+arXiv ID, or vice versa). There is no code path in this version that
+populates both `crossref_text` and `arxiv_text` with real fetched
+content in the same resolution call.
+
+CONSEQUENCE FOR THE VERDICT MODEL: `sources_conflict` cannot occur under
+this implemented behavior — it would require both legs to return usable,
+disagreeing records in the same resolution, which never happens when
+only one leg is ever fetched. The verdict is retained in `_VALID_VERDICTS`
+and the charter still names it (rather than removing it and silently
+narrowing the model), because a future version implementing genuine
+counterpart resolution would restore its reachability without needing a
+new verdict value — but a filer or reviewer of this version should read
+`sources_conflict` as "not reachable under current single-source
+behavior," not as a live branch. Every other verdict (`confirmed_active`,
+`confirmed_retracted`, `no_record_found`) is fully reachable and has been
+live-tested (see CONFIRMED VIA LIVE TESTING below).
+
+DEFERRED, NOT BUILT HERE: genuine counterpart-identifier resolution — a
+Crossref response's own metadata occasionally carries a `link` or DOI
+cross-reference resolving to an arXiv ID, and arXiv's Atom response
+occasionally carries a `<arxiv:doi>` element resolving to a Crossref DOI
+— would need to be parsed out of whichever single leg is fetched, and
+would need the *other* leg then fetched conditionally using that
+resolved counterpart identifier, before `sources_conflict` could ever be
+reached honestly. This is real, additional fetch-and-parse logic, not a
+one-line change, and disagreement between two authoritative sources is
+intrinsically rare in the real world — meaning even a correct
+implementation of this would likely remain untested live for a long
+time, the same practical difficulty already named in the deliberate-gaps
+section below. Left for a future iteration rather than built
+speculatively now.
 
 NONDET PATTERN — full ten-item rule set (section 4) applies without
 exception, adapted for this concept:
@@ -181,19 +228,18 @@ DELIBERATE GAPS IN THIS CONTRACT, STATED EXPLICITLY:
     caveat Copyleft's SPDX leg and SentinelSLA's GHSA leg both carry (an
     authoritative source can still lag reality) — named here rather
     than left implicit.
-  - `sources_conflict` has never been observed live. All three live
-    tests below are single-leg (two DOI-only, one arXiv-only) — none
-    registered a paper carrying both a DOI and an arXiv ID with
-    genuinely disagreeing records, which is intrinsically rare (real
-    disagreement between Crossref and arXiv on retraction status is not
-    a common real-world occurrence) and was not practically forceable
-    on demand during this testing pass. The verdict branch itself is
-    exercised by the charter's instructions and the validator's
-    membership check against _VALID_VERDICTS, but never by a live case
-    that actually required the model to detect a genuine conflict
-    between two populated, disagreeing sources. Treat this the same as
-    SentinelSLA's own untested `compliant`-with-populated-math branch:
-    a named, deliberate gap, not a blocker to deployment.
+  - `sources_conflict` has never been observed live, and — per
+    IMPLEMENTED SCOPE above — is not currently reachable under this
+    version's single-source-per-paper fetch behavior, not merely rare.
+    All three live tests below are single-leg (two DOI-only, one
+    arXiv-only) because every resolution in this version is single-leg;
+    no test could have exercised a genuine two-source disagreement
+    without the counterpart-resolution logic named as deferred above.
+    The verdict remains structurally present (charter instruction,
+    `_VALID_VERDICTS` membership, validator's membership check) so that
+    implementing counterpart resolution later restores its reachability
+    without a verdict-model change, but a filer or reviewer of this
+    version should not expect to ever see it.
 
 CONFIRMED VIA LIVE TESTING (StudioNet, Aug 2026) — not just theoretically
 correct:
@@ -582,6 +628,25 @@ def _parse_leader_json(result) -> dict:
     }
 
 
+def _compute_assertion_accurate(verdict, asserted_status) -> str:
+    """
+    Pure deterministic comparison of the agreed verdict against the
+    filer's asserted status. Called from resolve_check, strictly after
+    run_nondet_unsafe returns — never inside leader_fn/validator_fn, and
+    touches no storage-backed field.
+    """
+    if verdict == "confirmed_active":
+        return "true" if asserted_status == "active" else "false"
+    elif verdict == "confirmed_retracted":
+        return "true" if asserted_status == "retracted_or_withdrawn" else "false"
+    else:
+        # no_record_found or sources_conflict: the filer's assertion
+        # cannot be scored right or wrong against inconclusive evidence
+        # — see module docstring's note on why this is deliberate, not
+        # a gap.
+        return "unverifiable"
+
+
 def _build_judgment_prompt(crossref_text, arxiv_text, paper_id, asserted_status) -> str:
     parts = [
         _CHARTER,
@@ -762,20 +827,23 @@ class RetractionWatch(gl.Contract):
                 else:
                     crossref_text = f"[crossref fetch failed: {data}]"
             else:
-                # An arXiv-registered paper may still have a Crossref DOI
-                # in its own metadata; attempting Crossref by arXiv ID
-                # directly won't resolve, so this leg is deliberately
-                # skipped rather than fetched-and-guaranteed-to-fail —
-                # a fetch attempt that can never succeed given the input
-                # shape provides no evidentiary value and only costs a
-                # network round-trip.
+                # identifier_kind == "arxiv": this leg is not fetched.
+                # IMPLEMENTED SCOPE (module docstring): identifier_kind is
+                # fixed at registration and gates exactly one leg for the
+                # life of this record. No code here parses a counterpart
+                # DOI out of arXiv metadata, so there is nothing to fetch
+                # Crossref with even if the underlying paper has one —
+                # this is a scope boundary, not a cost-based skip of an
+                # otherwise-available fetch.
                 pass
 
             if paper_mem.identifier_kind == "arxiv":
                 arxiv_text = _fetch_text(_arxiv_api_url(paper_mem.paper_id))
             else:
-                # Symmetric reasoning to the Crossref skip above: a bare
-                # DOI has no arXiv ID to query arXiv's API with.
+                # identifier_kind == "doi": symmetric to the branch above
+                # — no code here parses a counterpart arXiv ID out of
+                # Crossref metadata, so this leg is never fetched for a
+                # DOI-registered paper, regardless of whether one exists.
                 pass
 
             prompt = _build_judgment_prompt(
@@ -827,18 +895,10 @@ class RetractionWatch(gl.Contract):
 
         # assertion_accurate is computed deterministically from the
         # already-agreed verdict, AFTER run_nondet_unsafe returns — this
-        # is plain Python comparison logic, not a second nondet call, and
-        # touches no storage-backed field mid-computation.
-        if verdict == "confirmed_active":
-            assertion_accurate = "true" if chk_mem.asserted_status == "active" else "false"
-        elif verdict == "confirmed_retracted":
-            assertion_accurate = "true" if chk_mem.asserted_status == "retracted_or_withdrawn" else "false"
-        else:
-            # no_record_found or sources_conflict: the filer's assertion
-            # cannot be scored right or wrong against inconclusive
-            # evidence — see module docstring's note on why this is
-            # deliberate, not a gap.
-            assertion_accurate = "unverifiable"
+        # is plain Python comparison logic (_compute_assertion_accurate,
+        # module level), not a second nondet call, and touches no
+        # storage-backed field mid-computation.
+        assertion_accurate = _compute_assertion_accurate(verdict, chk_mem.asserted_status)
 
         chk.verdict = verdict
         chk.confidence_bps = u256(int(result["confidence_bps"]))

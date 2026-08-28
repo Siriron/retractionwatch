@@ -21,10 +21,16 @@ Four verdicts, not two or three:
 
 - `confirmed_active` — a usable record exists, no retraction signal present.
 - `confirmed_retracted` — a source affirmatively shows retraction or withdrawal.
-- `no_record_found` — neither source returned a usable record at all.
-- `sources_conflict` — Crossref and arXiv genuinely disagree.
+- `no_record_found` — the fetched source returned no usable record at all.
+- `sources_conflict` — reserved for a future version implementing counterpart-identifier resolution; **not reachable in this version**.
 
-The last two are structurally different failure modes ("nothing found" vs. "found, but disagreeing") and are kept separate rather than collapsed into a single "unverifiable" bucket, which would hide a real distinction a filer needs to see.
+The last two are structurally different failure modes ("nothing found" vs. "found, but disagreeing") and are kept separate in the verdict model rather than collapsed into a single "unverifiable" bucket, which would hide a real distinction a filer needs to see once counterpart resolution exists. See "Single-source behavior" below for why only one of Crossref/arXiv is ever fetched per paper in this version, which is what makes `sources_conflict` currently unreachable.
+
+## Single-source behavior (this version)
+
+`identifier_kind` is fixed once, at `register_paper` time, from the shape of the identifier supplied — `"doi"` or `"arxiv"`. `resolve_check` fetches exactly one evidence leg for the life of that paper record: Crossref if `identifier_kind == "doi"`, arXiv if `identifier_kind == "arxiv"`. It never attempts the other leg, even though a real paper's Crossref record can reference a counterpart arXiv ID (or vice versa) — no code in this version parses that counterpart identifier out of the fetched record and fetches the other API with it.
+
+This means every resolution in this version is genuinely single-source: one real fetch, one `"[not attempted: ...]"` marker standing in for the other leg. `sources_conflict` requires both legs to return usable, disagreeing records in the same resolution — which cannot happen while only one leg is ever fetched. A future version implementing counterpart resolution would restore `sources_conflict`'s reachability without changing the verdict model itself, which is why the verdict is kept rather than removed.
 
 ## Assertion comparison
 

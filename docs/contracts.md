@@ -1,8 +1,8 @@
 # Smart contract
 
-Deployed on GenLayer StudioNet: `0xE7f4D6267903e346578cb1F5748ba61C1f30120b`
+Deployed on GenLayer StudioNet: `0x36ba2f2bC63dD2558c211CA04571F3f28AEb5380`
 
-[View on explorer](https://explorer-studio.genlayer.com/address/0xE7f4D6267903e346578cb1F5748ba61C1f30120b)
+[View on explorer](https://explorer-studio.genlayer.com/address/0x36ba2f2bC63dD2558c211CA04571F3f28AEb5380)
 
 ## Methods
 
@@ -10,7 +10,7 @@ Deployed on GenLayer StudioNet: `0xE7f4D6267903e346578cb1F5748ba61C1f30120b`
 |---|---|---|
 | `register_paper(paper_id: str)` | write | Registers a paper by DOI or arXiv ID. Rejects anything that doesn't shape-match either format. |
 | `file_check(paper_id: str, asserted_status: str)` | write | Files a status check against a registered paper. `asserted_status` must be `active` or `retracted_or_withdrawn`. |
-| `resolve_check(check_id: u256)` | write | Fetches Crossref (and arXiv, if applicable) live, runs multi-validator consensus, records the verdict and the assertion-accuracy comparison. |
+| `resolve_check(check_id: u256)` | write | Fetches exactly one evidence leg — Crossref for a DOI-registered paper, arXiv for an arXiv-registered paper, never both — runs multi-validator consensus, records the verdict and the assertion-accuracy comparison. |
 | `get_paper(paper_id: str)` | view | Returns a paper's registration record and check count. |
 | `get_check(check_id: u256)` | view | Returns a check's current state, including its verdict once resolved. |
 | `get_next_check_id()` | view | Returns the next check ID that will be assigned. |
@@ -32,5 +32,5 @@ All three: empty stdout, empty stderr, `SUCCESS` execution result, `Accepted` co
 ## Known, deliberate gaps
 
 - `reasoning_summary` content validation is a length threshold (>20 chars) only, not criteria-based — the same gap named in this project's prior contracts, not resolved here either.
-- `sources_conflict` has never been observed live — no test case with two genuinely disagreeing sources was available.
+- `sources_conflict` is not reachable in this version: `resolve_check` fetches exactly one evidence leg per paper (Crossref for DOI, arXiv for arXiv ID), so no resolution can ever populate two disagreeing sources to conflict. See `docs/architecture.md`'s "Single-source behavior" section.
 - No appeal or re-resolution path in this version.

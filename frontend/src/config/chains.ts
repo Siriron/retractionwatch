@@ -2,7 +2,7 @@
 // no .env.example, no Vercel environment variable. Confirmed standing
 // pattern for this project (see project knowledge, section 7): changing
 // the deployed address means editing this one line, nowhere else.
-export const CONTRACT_ADDRESS = '0xE7f4D6267903e346578cb1F5748ba61C1f30120b';
+export const CONTRACT_ADDRESS = '0x36ba2f2bC63dD2558c211CA04571F3f28AEb5380';
 
 export const STUDIONET_CONFIG = {
   chainId: '0xF22F', // 61999
